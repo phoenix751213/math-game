@@ -1,0 +1,269 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>三段變速翻轉棋 模擬器（黑白交錯起始盤）</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    header {
+      padding: 16px;
+      text-align: center;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    #controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    #controls label {
+      font-size: 14px;
+    }
+    #board {
+      display: grid;
+      border: 2px solid #444;
+      background: #222;
+    }
+    .cell {
+      width: 40px;
+      height: 40px;
+      box-sizing: border-box;
+      border: 1px solid #333;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+      user-select: none;
+      transition: transform 0.08s ease-out;
+    }
+    .cell:active {
+      transform: scale(0.93);
+    }
+    .state-0 { background: #fdfdfd; color: #222; } /* 白 */
+    .state-1 { background: #d0d0d0; color: #111; } /* 灰 */
+    .state-2 { background: #444;    color: #f5f5f5; } /* 黑 */
+    #info {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #444;
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 13px;
+      border-radius: 4px;
+      border: 1px solid #888;
+      background: #fff;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #eee;
+    }
+    input[type="number"] {
+      width: 60px;
+    }
+    #log {
+      margin-top: 8px;
+      font-size: 12px;
+      max-width: 360px;
+      text-align: center;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>三段變速翻轉棋 模擬器</h1>
+    <div style="font-size:13px;color:#555;">
+      初始盤：<b>黑白交錯，左上角為黑色</b><br>
+      點一格：該格與上下左右一起顏色循環：白(0) → 灰(1) → 黑(2) → 白(0)
+    </div>
+  </header>
+
+  <section id="controls">
+    <label>
+      棋盤大小 N：
+      <input id="sizeInput" type="number" min="2" max="12" value="5">
+    </label>
+    <button id="setSizeBtn">設定大小</button>
+    <button id="checkerBtn">黑白交錯起始盤</button>
+    <button id="clearBtn">全部設為白</button>
+    <button id="randomBtn">隨機盤面</button>
+    <button id="targetCheckBtn">檢查是否為「反相盤」</button>
+  </section>
+
+  <div id="board"></div>
+  <div id="info">已按下 0 步。</div>
+  <div id="log"></div>
+
+  <script>
+    let N = 5;
+    let board = [];
+    let steps = 0;
+    let boardDiv = document.getElementById('board');
+    let infoDiv = document.getElementById('info');
+    let logDiv = document.getElementById('log');
+
+    function initBoardData() {
+      board = [];
+      for (let i = 0; i < N; i++) {
+        let row = [];
+        for (let j = 0; j < N; j++) {
+          // 0=白, 1=灰, 2=黑
+          row.push(0);
+        }
+        board.push(row);
+      }
+    }
+
+    // 黑白交錯盤：左上角為黑(2)，右邊是白(0)，依此交錯
+    function setCheckerboard() {
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          // (i+j) 偶數格為黑(2)，奇數格為白(0)
+          board[i][j] = ((i + j) % 2 === 0) ? 2 : 0;
+        }
+      }
+      steps = 0;
+      renderBoard();
+      updateInfo();
+      logDiv.textContent = "已設為黑白交錯起始盤（左上角為黑）。";
+    }
+
+    function renderBoard() {
+      boardDiv.innerHTML = "";
+      boardDiv.style.gridTemplateColumns = `repeat(${N}, 40px)`;
+      boardDiv.style.gridTemplateRows = `repeat(${N}, 40px)`;
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          const cell = document.createElement('div');
+          cell.classList.add('cell', 'state-' + board[i][j]);
+          cell.dataset.i = i;
+          cell.dataset.j = j;
+          cell.onclick = () => {
+            press(i, j);
+          };
+          // 顯示狀態數字（0,1,2），方便觀察 mod 3
+          cell.textContent = board[i][j];
+          boardDiv.appendChild(cell);
+        }
+      }
+    }
+
+    function cycle(i, j) {
+      if (i < 0 || i >= N || j < 0 || j >= N) return;
+      board[i][j] = (board[i][j] + 1) % 3;
+    }
+
+    function press(i, j) {
+      cycle(i, j);
+      cycle(i - 1, j);
+      cycle(i + 1, j);
+      cycle(i, j - 1);
+      cycle(i, j + 1);
+      steps++;
+      renderBoard();
+      updateInfo();
+      logDiv.textContent = `剛剛按了第 ${i+1} 行，第 ${j+1} 列。`;
+    }
+
+    function updateInfo() {
+      infoDiv.textContent = `已按下 ${steps} 步。`;
+    }
+
+    function clearBoard() {
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          board[i][j] = 0;
+        }
+      }
+      steps = 0;
+      renderBoard();
+      updateInfo();
+      logDiv.textContent = "已全部重設為白色（狀態 0）。";
+    }
+
+    function randomBoard() {
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          board[i][j] = Math.floor(Math.random() * 3);
+        }
+      }
+      steps = 0;
+      renderBoard();
+      updateInfo();
+      logDiv.textContent = "已隨機產生盤面。";
+    }
+
+    // 檢查是否為「黑白交錯盤的完全反相」，
+    // 起始：偶數格=黑(2)、奇數格=白(0)
+    // 目標：偶數格=白(0)、奇數格=黑(2)，且盤面不得出現灰(1)
+    function isReverseOfChecker() {
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          const orig = ((i + j) % 2 === 0) ? 2 : 0;
+          const expected = (orig === 2) ? 0 : 2;
+          const val = board[i][j];
+          // 不允許灰色(1) 出現，且必須等於 expected
+          if (val !== expected || val === 1) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    document.getElementById('setSizeBtn').onclick = () => {
+      const val = parseInt(document.getElementById('sizeInput').value, 10);
+      if (isNaN(val) || val < 2 || val > 12) {
+        alert("請輸入 2 到 12 之間的整數 N。");
+        return;
+      }
+      N = val;
+      initBoardData();
+      renderBoard();
+      steps = 0;
+      updateInfo();
+      logDiv.textContent = `棋盤大小已改為 ${N}×${N}，目前全部為白色。`;
+    };
+
+    document.getElementById('checkerBtn').onclick = () => {
+      setCheckerboard();
+    };
+
+    document.getElementById('clearBtn').onclick = () => {
+      clearBoard();
+    };
+
+    document.getElementById('randomBtn').onclick = () => {
+      randomBoard();
+    };
+
+    document.getElementById('targetCheckBtn').onclick = () => {
+      if (isReverseOfChecker()) {
+        logDiv.textContent = "✅ 目前盤面是「黑白交錯起始盤」的完全反相，且沒有灰色(1)！";
+      } else {
+        logDiv.textContent = "❌ 目前盤面還不是目標盤（黑白交錯的完全反相），或是含有灰色(1)。";
+      }
+    };
+
+    // 初始化：黑白交錯、左上角黑
+    initBoardData();
+    setCheckerboard();
+  </script>
+</body>
+</html>
