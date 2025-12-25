@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>三角棋盤翻轉遊戲（教師版：解答＋動畫）</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:16px;background:#f6f6f6;color:#222;display:flex;flex-direction:column;align-items:center;gap:10px;}
+  h1{font-size:20px;margin:4px 0;}
+  #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;background:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+  label{font-size:14px;}
+
+  input[type=number]{width:70px;padding:4px;}
+  button{padding:6px 10px;font-size:13px;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer;}
+  button:hover{background:#eee;}
+  .seg{display:flex;gap:6px;align-items:center;border:1px solid #bbb;padding:4px 8px;border-radius:8px;font-size:13px;background:#fafafa;}
+  #boardWrap{background:#fff;padding:10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);width:min(720px,95vw);}
+  #info{font-size:13px;color:#444;}
+  #log{font-size:12px;color:#555;min-height:1em;}
+  #boardSvg{width:100%;height:auto;aspect-ratio:1.05/1;display:block;background:#fff;touch-action:manipulation;}
+  .legend{font-size:12px;color:#555;text-align:center;line-height:1.5;}
+
+  #historyPanel{width:min(720px,95vw);background:#fff;padding:10px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+  #historyPanel h2{font-size:14px;margin:0 0 6px 0;}
+  #recordList{
+    background:#fafafa;border:1px solid #ddd;border-radius:8px;
+    padding:8px 10px;font-size:13px;line-height:1.7;min-height:90px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    white-space:pre-wrap;
+  }
+  .recordItem{padding:2px 0;}
+  #historyButtons{display:flex;gap:8px;margin-top:6px;justify-content:space-between;}
+  .hint{font-size:12px;color:#666;margin-top:2px;}
+
+  #solverPanel{width:min(720px,95vw);background:#fff;padding:10px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+  #solutionBox{
+    margin-top:6px;
+    font-size:12px;
+    white-space:pre-wrap;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+</style>
+</head>
+<body>
+
+<h1>三角棋盤翻轉遊戲（教師版：解答＋動畫）</h1>
+<div class="legend">
+  棋盤：小正三角形拼成的大三角形（上下交錯），<b>尖端朝上</b>。<br/>
+  點一格：<b>自己 + 與它共邊相鄰的格子</b>一起變色。<br/>
+  2 段：白↔黑　／　3 段：白→灰→黑→白
+</div>
+
+<div id="controls">
+  <label>棋盤層數 L（底邊小三角形數）： 
+    <input id="sizeInput" type="number" min="2" max="50" value="6"/>
+  </label>
+  <button id="setSizeBtn">設定大小</button>
+
+  <div class="seg">
+    <label><input type="radio" name="mode" value="2" checked> 2 段變速</label>
+    <label><input type="radio" name="mode" value="3"> 3 段變速</label>
+  </div>
+
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px;">
+    <input type="checkbox" id="showLabelChk" checked>
+    顯示編號
+  </label>
+
+  <button id="resetBtn">全部白色</button>
+  <button id="checkerBtn">交錯起始盤（頂端黑）</button>
+  <button id="randomBtn">隨機盤面</button>
+
+  <button id="undoBtn">回復上一手</button>
+  <button id="saveBtn">儲存棋局</button>
+  <button id="loadBtn">載入棋局</button>
+  <input id="loadFile" type="file" accept=".json" style="display:none" />
+</div>
+
+<div id="boardWrap">
+  <svg id="boardSvg" viewBox="0 0 10 10" preserveAspectRatio="xMidYMid meet" aria-label="triangle board"></svg>
+</div>
+
+<div id="info">已按下 0 步。</div>
+<div id="log"></div>
+
+<section id="historyPanel">
+  <h2>操作歷程（每按一次就新增一行）</h2>
+  <div class="hint">
+    編號規則：第 1 列 1 顆，第 2 列 3 顆，第 3 列 5 顆…，<br/>
+    每列由左到右編號（跟你手繪那張 1～36 的排列一致）。
+  </div>
+  <div id="recordList"><span style="color:#777">（尚未按任何棋子）</span></div>
+  <div id="historyButtons">
+    <button id="clearHistoryBtn">清除歷程</button>
+    <button id="copyHistoryBtn">複製歷程文字</button>
+  </div>
+</section>
+
+<section id="solverPanel">
+  <h2>自動解答（從交錯起始盤 → 全盤顏色反向）</h2>
+  <p class="hint">
+    先選好 L 與 2/3 段，再按「計算最少步數解」。<br/>
+    這裡求的是：從「交錯起始盤（頂端黑）」變成「黑↔白完全互換」所需的最少步數。
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+    <button id="solveBtn">計算最少步數解</button>
+    <button id="playSolBtn">播放解答動畫</button>
+  </div>
+  <div id="solutionBox">（尚未計算解答）</div>
+</section>
+
+<script>
+(() => {
+  let L = 6;
+  let K = 2;
+  let triangles = [];
+  let verts = [];
+  let neighbors = [];
+  let states = [];
+  let steps = 0;
+  let historyLines = [];
+  let labelMap = [];
+  let solutionVector = null;
+  let playTimer = null;
+  let undoStack = [];
+
+  const sizeInput = document.getElementById("sizeInput");
+  const svg = document.getElementById("boardSvg");
+  const infoDiv = document.getElementById("info");
+  const logDiv = document.getElementById("log");
+  const recordList = document.getElementById("recordList");
+  const showLabelChk = document.getElementById("showLabelChk");
+  const solutionBox = document.getElementById("solutionBox");
+  const loadBtn = document.getElementById("loadBtn");
+  const loadFile = document.getElementById("loadFile");
+  const SQRT3 = Math.sqrt(3);
+
+  function vCoord(i,j){ return [i + j*0.5, j*(SQRT3/2)]; }
+
+  function buildBoard(newL){
+    L=newL;
+    steps=0; historyLines=[]; solutionVector=null;
+    undoStack = [];
+    renderRecordList();
+    solutionBox.textContent="（尚未計算解答）";
+
+    const vmap=new Map();
+    verts=[];
+    function vid(i,j){
+      const key=i+","+j;
+      if(!vmap.has(key)){
+        vmap.set(key, verts.length);
+        verts.push({i,j,xy:vCoord(i,j)});
+      }
+      return vmap.get(key);
+    }
+
+    triangles=[];
+    let tid=0;
+
+    // up triangles
+    for(let i=0;i<=L-1;i++){
+      for(let j=0;j<=L-1-i;j++){
+        triangles.push({
+          id:tid++,
+          verts:[ vid(i,j), vid(i+1,j), vid(i,j+1) ],
+          orient:"up"
+        });
+      }
+    }
+    // down triangles
+    for(let i=0;i<=L-2;i++){
+      for(let j=0;j<=L-2-i;j++){
+        triangles.push({
+          id:tid++,
+          verts:[ vid(i+1,j), vid(i+1,j+1), vid(i,j+1) ],
+          orient:"down"
+        });
+      }
+    }
+
+    // neighbors
+    const edgeMap=new Map();
+    function addEdge(tid,u,v){
+      const key=u<v?u+"-"+v:v+"-"+u;
+      if(!edgeMap.has(key)) edgeMap.set(key,[]);
+      edgeMap.get(key).push(tid);
+    }
+    for(const t of triangles){
+      const [u,v,w]=t.verts;
+      addEdge(t.id,u,v); addEdge(t.id,v,w); addEdge(t.id,w,u);
+    }
+    const neighborSets=triangles.map(()=>new Set());
+    for(const arr of edgeMap.values()){
+      if(arr.length===2){
+        const [t1,t2]=arr;
+        neighborSets[t1].add(t2);
+        neighborSets[t2].add(t1);
+      }
+    }
+    neighbors=neighborSets.map(s=>Array.from(s));
+
+    // flip and centroid
+    const rawAll=triangles.flatMap(t=>t.verts.map(vi=>verts[vi].xy));
+    const maxY=Math.max(...rawAll.map(p=>p[1]));
+    for(const t of triangles){
+      const ptsRaw=t.verts.map(vi=>verts[vi].xy);
+      t.pts=ptsRaw.map(([x,y])=>[x,maxY-y]);
+      t.centroid=[
+        (t.pts[0][0]+t.pts[1][0]+t.pts[2][0])/3,
+        (t.pts[0][1]+t.pts[1][1]+t.pts[2][1])/3
+      ];
+    }
+
+    const allPts=triangles.flatMap(t=>t.pts);
+    const xs=allPts.map(p=>p[0]), ys=allPts.map(p=>p[1]);
+    const minX=Math.min(...xs), maxX=Math.max(...xs);
+    const minY=Math.min(...ys), maxY2=Math.max(...ys);
+    const pad=0.4;
+    svg.setAttribute("viewBox",
+      `${minX-pad} ${minY-pad} ${maxX-minX+2*pad} ${maxY2-minY+2*pad}`);
+
+    // 編號
+    const totalH=maxY2-minY;
+    const rowH=totalH/L;
+    const rowInfo=triangles.map((t,idx)=>{
+      const cy=t.centroid[1];
+      let row=Math.floor((cy-minY)/rowH+1e-6);
+      if(row<0) row=0;
+      if(row>=L) row=L-1;
+      return {idx,row,x:t.centroid[0]};
+    });
+    rowInfo.sort((a,b)=>a.row-b.row || a.x-b.x);
+    labelMap=new Array(triangles.length);
+    rowInfo.forEach((obj,k)=>{labelMap[obj.idx]=k+1;});
+
+    states=new Array(triangles.length).fill(0);
+
+    render(); updateInfo();
+    logDiv.textContent=`棋盤已設定為 L=${L}（編號遵照 1,3,5,... 奇數列）。`;
+  }
+
+  function colorOf(state){
+    if(K===2) return state===0?"#fff":"#222";
+    return state===0?"#fff":(state===1?"#cfcfcf":"#222");
+  }
+
+  function render(){
+    svg.innerHTML="";
+    for(const t of triangles){
+      const poly=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+      poly.setAttribute("points",t.pts.map(p=>p[0]+","+p[1]).join(" "));
+      poly.setAttribute("fill",colorOf(states[t.id]));
+      poly.setAttribute("stroke","#444");
+      poly.setAttribute("stroke-width","0.05");
+      poly.style.cursor="pointer";
+      poly.style.pointerEvents="all";
+      poly.addEventListener("click",(ev)=>{ev.preventDefault();press(t.id);},{passive:false});
+      svg.appendChild(poly);
+
+      if(showLabelChk && showLabelChk.checked){
+        const text=document.createElementNS("http://www.w3.org/2000/svg","text");
+        text.setAttribute("x",t.centroid[0]);
+        text.setAttribute("y",t.centroid[1]+0.08);
+        text.setAttribute("text-anchor","middle");
+        text.setAttribute("font-size","0.35");
+        const isBlack=(K===2 && states[t.id]===1)||(K===3 && states[t.id]===2);
+        text.setAttribute("fill",isBlack?"#ffffff":"#111111");
+        text.textContent=labelMap[t.id];
+        svg.appendChild(text);
+      }
+    }
+  }
+
+  function cycle(tid){ states[tid]=(states[tid]+1)%K; }
+
+  function press(tid){
+    undoStack.push({
+      states: states.slice(),
+      steps,
+      historyLines: historyLines.slice()
+    });
+
+    cycle(tid);
+    for(const nb of neighbors[tid]) cycle(nb);
+    steps++;
+    appendHistory(tid);
+    render();
+    updateInfo();
+    logDiv.textContent=`按下第 ${labelMap[tid]} 顆三角棋子。`;
+
+    solutionVector = null;
+    solutionBox.textContent = "（尚未計算解答）";
+  }
+
+  function appendHistory(tid){
+    historyLines.push(`第 ${labelMap[tid]} 顆（按 1 次）`);
+    renderRecordList();
+  }
+
+  function renderRecordList(){
+    if(historyLines.length===0){
+      recordList.innerHTML=`<span style="color:#777">（尚未按任何棋子）</span>`;
+      return;
+    }
+    recordList.innerHTML=historyLines.map(ln=>`<div class="recordItem">${ln}</div>`).join("");
+    recordList.scrollTop=recordList.scrollHeight;
+  }
+
+  function updateInfo(){ infoDiv.textContent=`已按下 ${steps} 步。`; }
+
+  function resetAll(){
+    states.fill(0);
+    steps=0;
+    historyLines=[];
+    solutionVector=null;
+    undoStack = [];
+    renderRecordList();
+    solutionBox.textContent="（尚未計算解答）";
+    render(); updateInfo(); logDiv.textContent="已全部重設為白色。";
+  }
+
+  function setCheckerboard(){
+    let topTid=0,bestY=Infinity;
+    for(const t of triangles){
+      if(t.centroid[1]<bestY){bestY=t.centroid[1]; topTid=t.id;}
+    }
+    const topOrient=triangles[topTid].orient;
+    const black=(K===2?1:2);
+    for(const t of triangles){
+      const isBlack=(t.orient===topOrient);
+      states[t.id]=isBlack?black:0;
+    }
+    steps=0; historyLines=[]; solutionVector=null;
+    undoStack = [];
+    renderRecordList();
+    solutionBox.textContent="（尚未計算解答）";
+    render(); updateInfo(); logDiv.textContent="已設為交錯起始盤（頂端黑）。";
+  }
+
+  function randomBoard(){
+    for(let i=0;i<states.length;i++) states[i]=Math.floor(Math.random()*K);
+    steps=0; historyLines=[]; solutionVector=null;
+    undoStack = [];
+    renderRecordList();
+    solutionBox.textContent="（尚未計算解答）";
+    render(); updateInfo(); logDiv.textContent="已隨機產生盤面。";
+  }
+
+  function undoLast(){
+    if(undoStack.length === 0){
+      alert("目前沒有可以回復的步驟。");
+      return;
+    }
+    const snap = undoStack.pop();
+    states = snap.states.slice();
+    steps  = snap.steps;
+    historyLines = snap.historyLines.slice();
+    renderRecordList();
+    render();
+    updateInfo();
+    logDiv.textContent = "已回復上一個步驟。";
+
+    solutionVector = null;
+    solutionBox.textContent = "（尚未計算解答）";
+  }
+
+  function saveGame(){
+    const data = {
+      L,
+      K,
+      states,
+      steps,
+      historyLines
+    };
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `triangle_game_L${L}_steps${steps}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    logDiv.textContent = "已將棋盤狀態儲存為檔案。";
+  }
+
+  function loadGame(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try{
+        const data = JSON.parse(e.target.result);
+        if(typeof data.L !== "number" || !Array.isArray(data.states)){
+          alert("檔案格式不正確。");
+          return;
+        }
+        L = data.L;
+        K = data.K === 3 ? 3 : 2;
+        sizeInput.value = L;
+        document.querySelector(`input[name="mode"][value="${K}"]`).checked = true;
+
+        buildBoard(L);                    // 重建幾何與 labelMap
+        const N = triangles.length;
+        states = data.states.slice(0,N);
+        steps = data.steps || 0;
+        historyLines = Array.isArray(data.historyLines)?data.historyLines.slice():[];
+        undoStack = [];
+        solutionVector = null;
+        solutionBox.textContent = "（尚未計算解答）";
+
+        renderRecordList();
+        render();
+        updateInfo();
+        logDiv.textContent = "已載入棋局檔案。";
+      }catch(err){
+        console.error(err);
+        alert("讀取檔案失敗或格式錯誤。");
+      }
+    };
+    reader.readAsText(file,"utf-8");
+  }
+
+  function getCheckerStates(){
+    const N=triangles.length;
+    if(N===0) return {s0:[],sT:[]};
+    let topTid=0,bestY=Infinity;
+    for(const t of triangles){
+      if(t.centroid[1]<bestY){bestY=t.centroid[1]; topTid=t.id;}
+    }
+    const topOrient=triangles[topTid].orient;
+    const black=(K===2?1:2);
+    const s0=new Array(N);
+    const sT=new Array(N);
+    for(const t of triangles){
+      const isBlack=(t.orient===topOrient);
+      const v=isBlack?black:0;
+      s0[t.id]=v;
+      sT[t.id]=isBlack?0:black;
+    }
+    return {s0,sT};
+  }
+
+  function invMod(a,mod){
+    a=((a%mod)+mod)%mod;
+    for(let i=1;i<mod;i++) if((a*i)%mod===1) return i;
+    return null;
+  }
+
+  function gaussMod(A,b,mod){
+    const n=A.length,m=A[0].length;
+    const mat=A.map(r=>r.slice());
+    const rhs=b.slice();
+    const piv=new Array(m).fill(-1);
+    let row=0;
+
+    for(let col=0; col<m && row<n; col++){
+      let sel=-1;
+      for(let i=row;i<n;i++) if(mat[i][col]%mod!==0){sel=i;break;}
+      if(sel===-1) continue;
+      [mat[row],mat[sel]]=[mat[sel],mat[row]];
+      [rhs[row],rhs[sel]]=[rhs[sel],rhs[row]];
+
+      const inv=invMod(mat[row][col],mod);
+      if(inv===null) continue;
+      for(let j=0;j<m;j++) mat[row][j]=(mat[row][j]*inv)%mod;
+      rhs[row]=(rhs[row]*inv)%mod;
+
+      for(let i=0;i<n;i++){
+        if(i===row) continue;
+        const f=mat[i][col]%mod;
+        if(f===0) continue;
+        for(let j=0;j<m;j++){
+          mat[i][j]=(mat[i][j]-f*mat[row][j])%mod;
+          if(mat[i][j]<0) mat[i][j]+=mod;
+        }
+        rhs[i]=(rhs[i]-f*rhs[row])%mod;
+        if(rhs[i]<0) rhs[i]+=mod;
+      }
+      piv[col]=row;
+      row++;
+    }
+
+    for(let i=0;i<n;i++){
+      let all0=true;
+      for(let j=0;j<m;j++) if(mat[i][j]%mod!==0){all0=false;break;}
+      if(all0 && rhs[i]%mod!==0) return null;
+    }
+
+    const xp=new Array(m).fill(0);
+    for(let col=0; col<m; col++){
+      const r=piv[col];
+      if(r!==-1) xp[col]=rhs[r]%mod;
+    }
+
+    const free=[];
+    for(let col=0; col<m; col++) if(piv[col]===-1) free.push(col);
+
+    const basis=[];
+    for(const fcol of free){
+      const v=new Array(m).fill(0);
+      v[fcol]=1;
+      for(let col=0; col<m; col++){
+        const r=piv[col];
+        if(r!==-1){
+          v[col]=(-mat[r][fcol])%mod;
+          if(v[col]<0) v[col]+=mod;
+        }
+      }
+      basis.push(v);
+    }
+    return {xp,basis};
+  }
+
+  function findMinSolution(sol,mod){
+    const xp=sol.xp,basis=sol.basis;
+    const m=xp.length,d=basis.length;
+    let best=xp.slice();
+    let bestSteps=best.reduce((a,c)=>a+c,0);
+    if(d===0) return {x:best,steps:bestSteps,fullySearched:true};
+
+    const counts=new Array(d).fill(0);
+    let total=0;
+    const limit=200000;
+    let done=false;
+
+    while(!done){
+      if(total>0){
+        const x=xp.slice();
+        for(let k=0;k<d;k++){
+          const c=counts[k];
+          if(c===0) continue;
+          const v=basis[k];
+          for(let i=0;i<m;i++){
+            x[i]=(x[i]+c*v[i])%mod;
+          }
+        }
+        const steps=x.reduce((a,c)=>a+c,0);
+        if(steps<bestSteps){bestSteps=steps;best=x;}
+      }
+      total++;
+      if(total>limit) break;
+
+      let idx=0;
+      while(idx<d){
+        counts[idx]++;
+        if(counts[idx]===mod){counts[idx]=0;idx++;continue;}
+        break;
+      }
+      if(idx===d) done=true;
+    }
+    return {x:best,steps:bestSteps,fullySearched:total<=limit};
+  }
+
+  function solveMin(){
+    if(triangles.length===0){alert("棋盤尚未建立。");return;}
+    const N=triangles.length;
+    const {s0,sT}=getCheckerStates();
+    const b=new Array(N);
+    for(let i=0;i<N;i++){
+      let diff=(sT[i]-s0[i])%K;
+      if(diff<0) diff+=K;
+      b[i]=diff;
+    }
+
+    const A=Array.from({length:N},()=>Array(N).fill(0));
+    for(let j=0;j<N;j++){
+      A[j][j]=1;
+      for(const nb of neighbors[j]) A[nb][j]=1;
+    }
+
+    const sol=gaussMod(A,b,K);
+    if(!sol){
+      solutionVector=null;
+      solutionBox.textContent="這個棋盤在目前段數下，從交錯盤翻成完全反相「無解」。";
+      logDiv.textContent="自動解：無解。";
+      return;
+    }
+    const res=findMinSolution(sol,K);
+    solutionVector=res.x;
+    const steps=res.steps;
+
+    const items=[];
+    for(let i=0;i<N;i++){
+      const t=solutionVector[i]%K;
+      if(t!==0) items.push({tid:i,label:labelMap[i],times:t});
+    }
+    items.sort((a,b)=>a.label-b.label);
+
+    let txt=`最少步數 ≈ ${steps} 步（按下總次數）`;
+    if(!res.fullySearched){
+      txt+=`\n※ 自由度較高，只枚舉部分組合，這是「目前找到」的最小步數解，理論上可能還有更少。`;
+    }
+    if(items.length===0){
+      txt+=`\n\n不需要按任何棋子，交錯盤本身就已經是目標狀態。`;
+    }else{
+      txt+=`\n\n解答清單（照編號由小到大）：\n`;
+      txt+=items.map(it=>`第 ${it.label} 顆（按 ${it.times} 次）`).join("\n");
+    }
+    solutionBox.textContent=txt;
+    logDiv.textContent="已計算出一組步數最少的解答。";
+  }
+
+  function playSolution(){
+    if(!solutionVector){
+      alert("還沒有解答，請先按「計算最少步數解」。");
+      return;
+    }
+    if(playTimer){clearInterval(playTimer);playTimer=null;}
+
+    const solVec = solutionVector.slice();
+    setCheckerboard();
+
+    const seq=[];
+    for(let i=0;i<solVec.length;i++){
+      const times=solVec[i]%K;
+      for(let t=0;t<times;t++) seq.push(i);
+    }
+    seq.sort((a,b)=>labelMap[a]-labelMap[b]);
+
+    if(seq.length===0){
+      logDiv.textContent="不需要按任何棋子，盤面已經是目標狀態。";
+      return;
+    }
+
+    let idx=0;
+    const interval=400;
+    playTimer=setInterval(()=>{
+      if(idx>=seq.length){
+        clearInterval(playTimer);playTimer=null;
+        logDiv.textContent="解答播放完畢。";
+        return;
+      }
+      press(seq[idx]);
+      idx++;
+    },interval);
+
+    logDiv.textContent="正在播放最少步數解的動畫…";
+  }
+
+  // === 綁定 ===
+  document.getElementById("setSizeBtn").addEventListener("click",()=>{
+    const val=parseInt(sizeInput.value,10);
+    if(isNaN(val)||val<2||val>50){alert("請輸入 2~50 的整數層數 L。");return;}
+    buildBoard(val);
+    setCheckerboard();
+  });
+  document.getElementById("resetBtn").addEventListener("click",resetAll);
+  document.getElementById("checkerBtn").addEventListener("click",setCheckerboard);
+  document.getElementById("randomBtn").addEventListener("click",randomBoard);
+  document.getElementById("undoBtn").addEventListener("click",undoLast);
+  document.getElementById("saveBtn").addEventListener("click",saveGame);
+  loadBtn.addEventListener("click",()=>loadFile.click());
+  loadFile.addEventListener("change",e=>{
+    const f=e.target.files[0];
+    if(f) loadGame(f);
+    e.target.value="";
+  });
+
+  document.getElementById("clearHistoryBtn").addEventListener("click",()=>{
+    historyLines=[];renderRecordList();logDiv.textContent="已清除歷程（棋盤不變）。";
+  });
+
+  document.getElementById("copyHistoryBtn").addEventListener("click",async ()=>{
+    const text=historyLines.join("\n");
+    if(!navigator.clipboard){alert("此裝置不支援自動複製，請手動選取。");return;}
+    try{await navigator.clipboard.writeText(text);logDiv.textContent="已複製歷程到剪貼簿。";}
+    catch(e){alert("複製失敗，請手動選取。");}
+  });
+
+  for(const r of document.querySelectorAll("input[name=mode]")){
+    r.addEventListener("change",(e)=>{
+      K=parseInt(e.target.value,10);
+      for(let i=0;i<states.length;i++) states[i]=states[i]%K;
+      solutionVector=null;
+      solutionBox.textContent="（尚未計算解答）";
+      render();
+      logDiv.textContent=`已切換為 ${K} 段變速模式。`;
+    });
+  }
+
+  if(showLabelChk){showLabelChk.addEventListener("change",()=>{render();});}
+
+  document.getElementById("solveBtn").addEventListener("click",solveMin);
+  document.getElementById("playSolBtn").addEventListener("click",playSolution);
+
+  buildBoard(L);
+  setCheckerboard();
+})();
+</script>
+</body>
+</html>
